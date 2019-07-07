@@ -1,0 +1,55 @@
+{
+    "batch_size": 1000,
+    "local": {
+        "host": "localhost",
+        "port": 8086,
+        "database": "RIT"
+    },
+    "cloud": {
+        "host": "db5.ips.biba.uni-bremen.de",
+        "port": 8086,
+        "secure": true,
+        "username": "des",
+        "password": "lincoln",
+        "database": "ritTest"
+    },
+    "gps": {
+        "fields": ["lat", "lon", "sog", "cog"],
+        "measurement": "gps",
+        "tags": {
+            "type": "RMC"
+        },
+        "limit": 100
+    },
+    "ciss": {
+        "fields": ["accX", "accY", "accZ", "gyroX", "gyroY", "gyroZ", "magX", "magY", "magZ"],
+        "measurement": "ciss",
+        "tags": {
+            "node": "CISS1"
+        },
+        "limit": 300
+    },
+    "imu": {
+        "fields": ["yaw", "pitch", "roll", "laX", "laY", "laZ", "gX", "gY", "gZ"],
+        "measurement": "imu",
+        "tags": {
+            "node":"BNO055"
+        },
+        "limit": 300
+    },
+    "button": {
+        "fields": ["pressed"],
+        "measurement": "button",
+        "limit": 10
+    },
+    "n2k_1": {
+        "fields": ["v"],
+        "measurement": "\"env-temp\"",
+        "limit": 50
+    },
+    "n2k_2": {
+        "fields": ["v"],
+        "measurement": "\"env-humid\"",
+        "limit": 50
+    }
+}
