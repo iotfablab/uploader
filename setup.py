@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='uploader',
-    version=1.0,
+    version=1.1,
     description='Migrate values from local InfluxDB instance to InfluxDB Server/Cloud',
     url='https://gitlab.ips.biba.uni-bremen.de/usg/umg-uploader',
     author='Shantanoo Desai',

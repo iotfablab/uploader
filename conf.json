@@ -1,17 +1,17 @@
 {
-    "batch_size": 1000,
+    "batch_size": 165,
     "local": {
         "host": "localhost",
         "port": 8086,
-        "database": "RIT"
+        "database": "edgeDB"
     },
     "cloud": {
-        "host": "db5.ips.biba.uni-bremen.de",
+        "host": "test.server.influxdb.com",
         "port": 8086,
         "secure": true,
-        "username": "des",
-        "password": "lincoln",
-        "database": "ritTest"
+        "username": "username",
+        "password": "password",
+        "database": "finalDB"
     },
     "gps": {
         "fields": ["lat", "lon", "sog", "cog"],
@@ -19,7 +19,7 @@
         "tags": {
             "type": "RMC"
         },
-        "limit": 100
+        "limit": 5
     },
     "ciss": {
         "fields": ["accX", "accY", "accZ", "gyroX", "gyroY", "gyroZ", "magX", "magY", "magZ"],
@@ -27,7 +27,7 @@
         "tags": {
             "node": "CISS1"
         },
-        "limit": 300
+        "limit": 50
     },
     "imu": {
         "fields": ["yaw", "pitch", "roll", "laX", "laY", "laZ", "gX", "gY", "gZ"],
@@ -35,21 +35,21 @@
         "tags": {
             "node":"BNO055"
         },
-        "limit": 300
+        "limit": 50
     },
     "button": {
         "fields": ["pressed"],
         "measurement": "button",
-        "limit": 10
+        "limit": 5
     },
-    "n2k_1": {
-        "fields": ["v"],
-        "measurement": "\"env-temp\"",
-        "limit": 50
+    "EnvironmentalParameters": {
+        "fields": ["Atmospheric Pressure", "Temperature"],
+        "measurement": "EnvironmentalParameters",
+        "limit": 5
     },
-    "n2k_2": {
-        "fields": ["v"],
-        "measurement": "\"env-humid\"",
+    "Rudder": {
+        "fields": ["Position"],
+        "measurement": "Rudder",
         "limit": 50
     }
 }

@@ -1,166 +1,120 @@
-import sys
+#!/usr/bin/env python3
 import json
-import pprint
 import time
-import logging
-
+import concurrent.futures
 from influxdb import InfluxDBClient
-from influxdb.client import InfluxDBClientError
-from requests import ConnectionError
-# import urllib3
-# urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import requests.packages.urllib3 as urllib3
 
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handler = logging.FileHandler("/var/log/uploader.log")
-handler.setLevel(logging.ERROR)
-
-formatter = logging.Formatter('%(asctime)s-%(name)s-%(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 CONF_PATH = '/etc/umg/upload/conf.json'
 CONF = dict()
-LOCAL_DB = None
-CLOUD_DB = None
-BATCH = []
-BATCH_SIZE = 0
 
-def read_conf_file(path):
-    with open(path) as cFile:
-        _conf = json.load(cFile)
-    return _conf
+STOP = False
 
 
-def upload_batch(datapoints):
-    for point in datapoints:
-            for field in point['fields']:
-                if point['measurement'] != 'button':
-                    point['fields'][field] = float(point['fields'][field])
-                else:
-                    point['fields'][field] = int(point['fields'][field])
-            point['fields']['status'] = int(1)
-    try:
-        logger.info('sending data to cloud')
-        if connected_to_cloud():
-            if CLOUD_DB.write_points(datapoints, time_precision='ms'):
-                logger.info('UPLOAD Completed')
+with open(CONF_PATH) as cFile:
+    CONF = json.load(cFile)
 
-                try:
-                    logger.info('re-writing batch to Local InfluxDB')
-                    if LOCAL_DB.write_points(datapoints, time_precision='ms'):
-                        logger.info('LOCAL DB Updated with status field = 1')
-                        global BATCH
-                        BATCH = []
-                except InfluxDBClientError as e:
-                    logger.exception('Exception during re-writing batch to Local InfluxDB')
-                    logger.exception(e)
-            else:
-                logger.error('UPLOAD Failed')
-    except Exception as e:
-        logger.exception('exception during complete upload_batch function')
-        logger.exception(e)
-        pass
+local_db_conf = CONF['local']
+cloud_db_conf = CONF['cloud']
 
-def get_points(conf):
-    QUERY = 'SELECT "{}" FROM {} WHERE "status"=0 LIMIT {}'.format(
-        '","'.join(conf['fields']),
-        conf['measurement'],
-        conf['limit'])
-    logger.debug(QUERY)
-    global LOCAL_DB
-    try:
-        query_results = LOCAL_DB.query(QUERY, epoch='ms')
-    except InfluxDBClientError as e:
-        logger.exception('exception during querying of: {}'.format(conf['measurement']))
-        logger.exception(e)
-        pass
-    if len(list(query_results)) == 0:
-        logger.info('No Results for QUERY')
-    else:
-        global BATCH
-        for points in list(query_results)[0]:
-            upload_json_body = {
-            'measurement': conf['measurement'],
-            'fields': {}
-            }
-            if 'tags' in conf:
-                upload_json_body['tags'] = conf['tags']
-            upload_json_body['time'] = points['time']
-            upload_json_body['fields'] = points
-            del points['time']
-            BATCH.append(upload_json_body)
-        logger.debug('current batch length: {}'.format(len(BATCH)))
-        global BATCH_SIZE
-        if len(BATCH) >= BATCH_SIZE:
-            logger.info('Uploading Batch Now since limit reached')
-            upload_batch(BATCH)
+conf_keys = list(CONF.keys())
+conf_keys.remove('local')
+conf_keys.remove('cloud')
+conf_keys.remove('batch_size')
+
+
+LOCAL_DB = InfluxDBClient(host=local_db_conf['host'], port=local_db_conf['port'], database=local_db_conf['database'])
+CLOUD_DB = InfluxDBClient(host=cloud_db_conf['host'], port=cloud_db_conf['port'], ssl=True, verify_ssl=False, username=cloud_db_conf['username'], password=cloud_db_conf['password'], database=cloud_db_conf['database'])
+
 
 def connected_to_cloud():
     cloud_connected = False
     while not cloud_connected:
         try:
             cloud_version = CLOUD_DB.ping()
-            logger.debug('connected to InfluxDB v: {}'.format(cloud_version))
+            print('Cloud Version %s' %cloud_version)
             cloud_connected = True
             return cloud_connected
-        except ConnectionError as e:
-            logger.info('cannot connect to Cloud Server')
-            logger.exception(e)
-            logger.info('Trying again after 1.0 Minute')
+        except Exception as e:
+            print(e)
             time.sleep(60.0)
 
-def main():
-    logger.info('reading Configuration file')
-    global CONF
-    CONF = read_conf_file(CONF_PATH)
-    logger.debug('Config File: {}'.format(CONF))
-    global BATCH_SIZE
-    BATCH_SIZE = CONF['batch_size']
-    local_hostname = CONF['local']['host']
-    local_port = CONF['local']['port']
-    local_db = CONF['local']['database']
-    
-    cloud_hostname = CONF['cloud']['host']
-    cloud_port = CONF['cloud']['port']
-    cloud_db = CONF['cloud']['database']
-    cloud_username = CONF['cloud']['username']
-    cloud_password = CONF['cloud']['password']
+def query_and_upload(conf):
+    while not STOP:
+        print("For conf: {}".format(conf['measurement']))
+        QUERY = 'SELECT "{}" FROM {} WHERE "status"=0 LIMIT {}'.format('","'.join(conf['fields']), conf['measurement'], conf['limit'])
+        print(QUERY)
+        query_results = LOCAL_DB.query(QUERY, epoch='ms')
+        if len(list(query_results)) == 0:
+            print('No Results')
+        else:
+            batch = []
+            for points in list(query_results)[0]:
+                
+                upload_json_body = {'measurement': conf['measurement'], 'fields': {'status': 1.0}}
+                if 'tags' in conf:
+                    upload_json_body['tags'] = conf['tags']
+                upload_json_body['time'] = points['time']
+                # del points['time']
+                for field in conf['fields']:
+                    upload_json_body['fields'][field] = points[field]
+                batch.append(upload_json_body)
+                # print(batch)
+            print('Length of Batch: {}'.format(len(batch)))
+            for point in batch:
+                for field in point['fields']:
+                    if point['fields'][field] is not None:
+                        if isinstance(point['fields'][field], int):
+                            point['fields'][field] = float("%.3f" % point['fields'][field])
+                        else:
+                            point['fields'][field] = float(point['fields'][field])
+                    else:
+                        break
+            if connected_to_cloud():
+                print('Cloud Connected')
+                try:
+                    if CLOUD_DB.write_points(batch, time_precision='ms'):
+                        print('UPLOAD DONE')
+                        if LOCAL_DB.write_points(batch, time_precision='ms'):
+                            print('LOCAL UPDATE DONE')
+                        
+                    else:
+                        print('FAILED')
+                        return 'Fail'
+                except Exception as e:
+                    print(e)
+        time.sleep(1.0)
 
-    global LOCAL_DB
-    LOCAL_DB = InfluxDBClient(host=local_hostname, port=local_port, database=local_db)
-    
-    global CLOUD_DB
-    CLOUD_DB = InfluxDBClient(host=cloud_hostname,
-        port=cloud_port, 
-        ssl=True,
-        verify_ssl=False,
-        username=cloud_username,
-        password=cloud_password,
-        database=cloud_db)
+def main():
     
     try:
         _ = LOCAL_DB.ping()
-    
-    except ConnectionError as e:
-        logger.exception('Cannot connect to Local Server')
+    except Exception as e:
         raise(e)
-
+    
     if connected_to_cloud():
-        try:
-            while True:
-                for config in CONF.keys():
-                    if (config != 'local') and (config != 'cloud') and (config != 'batch_size'):
-                        print(config)
-                        get_points(CONF[config])
-                time.sleep(5.0)
-        except KeyboardInterrupt:
-            LOCAL_DB.close()
-            CLOUD_DB.close()
-            sys.exit(0)
+       try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                future_to_upload = [executor.submit(query_and_upload, CONF[conf]) for conf in conf_keys]
+                for future in concurrent.futures.as_completed(future_to_upload):
+                    
+                    try:
+                        data = future.result()
+                    except Exception as e:
+                        print(e)
+                    else:
+                        print(data)
+                while (not future.done() for future in future_to_upload):
+                    time.sleep(1.0)
+       except KeyboardInterrupt:
+           global STOP
+           STOP = True
+           LOCAL_DB.close()
+           CLOUD_DB.close()
+            
+
 
 if __name__ == "__main__":
     main()
